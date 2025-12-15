@@ -298,6 +298,87 @@
             font-family: 'Courier New', monospace;
             color: var(--color-text);
         }
+        /* Query UI styles */
+        .query-section {
+            margin-top: var(--space-24);
+        }
+
+        .query-title {
+            font-size: var(--font-size-xl);
+            font-weight: var(--font-weight-semibold);
+            margin-bottom: var(--space-12);
+        }
+
+        .query-input {
+            width: 100%;
+            min-height: 72px;
+            padding: var(--space-12);
+            border-radius: var(--radius-base);
+            border: 1px solid var(--color-border);
+            background-color: transparent;
+            color: var(--color-text);
+            margin-bottom: var(--space-12);
+            resize: vertical;
+        }
+
+        .results-grid {
+            display: grid;
+            gap: var(--space-16);
+        }
+
+        .model-card {
+            background-color: var(--color-secondary);
+            border: 1px solid var(--color-border);
+            padding: var(--space-12);
+            border-radius: var(--radius-base);
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: var(--space-12);
+            align-items: start;
+        }
+
+        .responses {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-12);
+            width: 100%;
+        }
+
+        .response-section {
+            background: transparent;
+            border-radius: var(--radius-base);
+        }
+
+        .response-text pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin: 0;
+        }
+
+        .preview-only {
+            overflow: hidden;
+        }
+
+        .card-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .card-controls .btn {
+            width: auto;
+            padding: var(--space-8) var(--space-12);
+        }
+
+        .model-header {
+            font-weight: var(--font-weight-medium);
+            margin-bottom: 8px;
+            color: var(--color-text);
+        }
+
+        .loading {
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
@@ -330,6 +411,18 @@
             </form>
 
             <div class="message" id="message"></div>
+
+            <div class="query-section" id="querySection">
+                <h2 class="query-title">Ask a question</h2>
+                <textarea id="queryInput" class="query-input" placeholder="Type your question here..."></textarea>
+                <button type="button" class="btn btn-primary" id="queryBtn" disabled>Ask</button>
+                <div class="message" id="queryMessage" style="margin-top:12px"></div>
+
+                <div class="code-section" style="margin-top:16px;">
+                    <div class="code-title">Model Responses</div>
+                    <div id="results" class="results-grid"></div>
+                </div>
+            </div>
 
             <!-- <div class="code-section">
                 <h2 class="code-title">Flask Backend Code (app.py)</h2>
@@ -509,6 +602,165 @@ if __name__ == '__main__':
                 showMessage('Network error: ' + error.message, 'error');
                 uploadBtn.disabled = false;
                 uploadBtn.textContent = 'Upload PDF';
+            }
+        });
+
+        // Query UI
+        const queryInput = document.getElementById('queryInput');
+        const queryBtn = document.getElementById('queryBtn');
+        const queryMessage = document.getElementById('queryMessage');
+        const results = document.getElementById('results');
+
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        queryInput.addEventListener('input', () => {
+            queryBtn.disabled = queryInput.value.trim() === '';
+        });
+
+        queryBtn.addEventListener('click', async () => {
+            const q = queryInput.value.trim();
+            if (!q) return;
+            queryBtn.disabled = true;
+            queryBtn.textContent = 'Asking...';
+            queryMessage.className = 'message active';
+            queryMessage.textContent = 'Loading...';
+            results.innerHTML = '';
+
+            try {
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    body: q,
+                });
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    queryMessage.className = 'message active error';
+                    queryMessage.textContent = data.error || 'Query failed';
+                    return;
+                }
+
+                queryMessage.className = 'message active success';
+                queryMessage.textContent = 'Responses received';
+
+                const respMap = data.responses || {};
+                const baseModels = [];
+                Object.keys(respMap).forEach((k) => {
+                    const base = k.startsWith('Without Supermemory ') ? k.replace('Without Supermemory ', '') : k;
+                    if (!baseModels.includes(base)) baseModels.push(base);
+                });
+
+                // Render a single card per model containing both With/Without Supermemory
+                baseModels.forEach((base) => {
+                    const withKey = base;
+                    const withoutKey = 'Without Supermemory ' + base;
+                    const withText = respMap[withKey] || '—';
+                    const withoutText = respMap[withoutKey] || '—';
+
+                    const card = document.createElement('div');
+                    card.className = 'model-card';
+
+                    const responsesWrapper = document.createElement('div');
+                    responsesWrapper.className = 'responses preview-mode';
+
+                    function makeResponseSection(title, fullText) {
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'response-section';
+
+                        const header = document.createElement('div');
+                        header.className = 'model-header';
+                        header.textContent = title;
+
+                        const preview = document.createElement('div');
+                        preview.className = 'response-text preview-only';
+
+                        const truncated = (fullText || '').toString();
+                        const max = 200;
+                        const isLong = truncated.length > max;
+                        const previewText = isLong ? truncated.slice(0, max) : truncated;
+
+                        const prePreview = document.createElement('pre');
+                        prePreview.className = 'preview';
+                        prePreview.textContent = previewText + (isLong ? '... ' : '');
+
+                        if (isLong) {
+                            const readMore = document.createElement('a');
+                            readMore.href = '#';
+                            readMore.textContent = 'read more';
+                            readMore.style.marginLeft = '6px';
+                            readMore.addEventListener('click', (ev) => {
+                                ev.preventDefault();
+                                // trigger the card's toggle to expand so behavior matches button
+                                const btn = card.querySelector('.card-controls .btn');
+                                if (btn && btn.textContent === 'Show more') btn.click();
+                            });
+                            prePreview.appendChild(readMore);
+                        }
+
+                        const preFull = document.createElement('pre');
+                        preFull.className = 'full-text';
+                        preFull.style.display = 'none';
+                        preFull.textContent = fullText;
+
+                        preview.appendChild(prePreview);
+                        preview.appendChild(preFull);
+
+                        wrapper.appendChild(header);
+                        wrapper.appendChild(preview);
+                        return wrapper;
+                    }
+
+                    const leftSection = makeResponseSection('With Supermemory', withText);
+                    const rightSection = makeResponseSection('Without Supermemory', withoutText);
+
+                    responsesWrapper.appendChild(leftSection);
+                    responsesWrapper.appendChild(rightSection);
+
+                    const controls = document.createElement('div');
+                    controls.className = 'card-controls';
+
+                    const titleEl = document.createElement('div');
+                    titleEl.textContent = base;
+                    titleEl.className = 'model-header';
+
+                    const toggleBtn = document.createElement('button');
+                    toggleBtn.className = 'btn btn-primary';
+                    toggleBtn.textContent = 'Show more';
+                    toggleBtn.addEventListener('click', () => {
+                        const expanded = card.classList.toggle('expanded');
+                        if (expanded) {
+                            toggleBtn.textContent = 'Show less';
+                            // reveal full texts
+                            const preFulls = card.querySelectorAll('.full-text');
+                            preFulls.forEach(p => p.style.display = 'block');
+                            // hide previews
+                            card.querySelectorAll('.preview').forEach(p => p.style.display = 'none');
+                        } else {
+                            toggleBtn.textContent = 'Show more';
+                            card.querySelectorAll('.full-text').forEach(p => p.style.display = 'none');
+                            card.querySelectorAll('.preview').forEach(p => p.style.display = 'block');
+                        }
+                    });
+
+                    controls.appendChild(titleEl);
+                    controls.appendChild(toggleBtn);
+
+                    card.appendChild(responsesWrapper);
+                    card.appendChild(controls);
+                    results.appendChild(card);
+                });
+
+            } catch (err) {
+                queryMessage.className = 'message active error';
+                queryMessage.textContent = 'Network error: ' + err.message;
+            } finally {
+                queryBtn.disabled = false;
+                queryBtn.textContent = 'Ask';
             }
         });
     </script>
