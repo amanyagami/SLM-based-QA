@@ -1,102 +1,200 @@
-# PDF Question Answering with Supermemory and HF Inference
+ 
+# SLM-based-QA
 
-NANDI is a simple Flask-based web service that lets you upload a PDF, index its content into Supermemory, and then query it using multiple LLMs via the Hugging Face Inference API.
+![With Supermemory](./With_supermemory.jpeg)
+![Without Supermemory](./without_Supermemory.jpeg)
 
-## Features
+**SLM-based-QA** is a Flask-based Question Answering system over PDF documents that demonstrates how **retrieval-augmented generation (RAG)** using **Supermemory** improves answer quality when compared to direct prompting of Small / Large Language Models (SLMs/LLMs).
 
-- Upload a PDF file (server-side size limit: 16 MB).
-- Extract text from the PDF with `pypdf`.
-- Store and index the extracted text in [Supermemory](https://supermemory.ai/).
-- Query the stored content:
-  - Retrieve relevant chunks from Supermemory.
-  - Call multiple models hosted via Hugging Face Inference (Groq, Novita, etc.).
-  - Compare responses:
-    - With Supermemory context.
-    - With raw PDF content only (no retrieval).
+The system allows users to upload a PDF, index it into Supermemory, and query it using multiple Hugging Face–hosted models, returning answers **with** and **without** retrieval context for direct comparison.
 
-## Requirements
+ 
 
-- Python 3.9+ (recommended)
-- A valid Hugging Face API token (`HF_TOKEN`)
-- A valid Supermemory API key
+## ✨ Key Features
 
-Install dependencies:
+- PDF upload and text extraction
+- Memory indexing using **Supermemory**
+- Retrieval-augmented QA
+- Multi-model inference via Hugging Face Inference API
+- Side-by-side comparison:
+  - **With Supermemory (RAG)**
+  - **Without Supermemory (Direct Prompting)**
+- Lightweight Flask backend with REST APIs
 
-```
+---
+
+## 🧠 Architecture Overview
+
+1. **PDF Upload**
+   - Accepts `.pdf` files
+   - Extracts full document text using `pypdf`
+
+2. **Memory Ingestion**
+   - Extracted text is stored in Supermemory with a container tag
+
+3. **Query Flow**
+   - User question → Supermemory semantic search
+   - Top-k relevant chunks retrieved
+   - Prompt constructed with retrieved context
+   - Prompt sent to multiple LLMs
+
+4. **Evaluation**
+   - Each model is queried twice:
+     - With Supermemory context
+     - Without Supermemory context
+
+---
+
+## 📦 Requirements
+
+- Python ≥ 3.9
+- Hugging Face account & API token
+- Supermemory API key
+
+### Environment Variables
+
+```bash
+export HF_TOKEN=your_huggingface_token
+````
+
+---
+
+## ⚙️ Installation
+
+```bash
+git clone https://github.com/amanyagami/SLM-based-QA.git
+cd SLM-based-QA
 pip install flask pypdf transformers torch huggingface_hub supermemory
 ```
 
-(Adjust package names/versions as needed.)
+---
 
-## Configuration
+## ▶️ Running the App
 
-Environment variables:
+```bash
+python app.py
+```
 
-- `HF_TOKEN`: Hugging Face API token used by `InferenceClient`.
-
-- Uploaded PDFs are saved to a `store/` directory in the current working directory.
-- The app expects an `index.html` file in the same directory as the script for the main UI.
-
-## Usage
-
-1. Run the script:
-
-   ```
-   python app.py
-   ```
-
-### Endpoints
-
-#### `GET /`
-
-- Serves `index.html` via `render_template_string`.
-- This should contain a simple UI for uploading a PDF and sending queries.
-
-#### `POST /upload`
-
-- Accepts a PDF file (form field name: `file`).
-- Steps:
-  - Validates file presence and extension (`.pdf` only).
-  - Saves the file to `store/`.
-  - Extracts text with `PdfReader`.
-  - Stores the text in an in-memory dictionary (`data_in_file`).
-  - Adds the text as a memory in Supermemory (`client.memories.add`).
-- Returns JSON with:
-  - `success`: `true` or `false`
-  - `message`: details about upload
-  - `filename`: sanitized filename used as `container_tag`
-  - `path`: local file path
-
-#### `POST /query`
-
-- Expects raw text in the request body (the user’s question).
-- Steps:
-  1. Uses Supermemory’s search to retrieve relevant chunks for the query.
-  2. Builds a prompt that includes:
-     - The retrieved facts from Supermemory.
-     - The user question.
-  3. For each model in the `Models` dictionary:
-     - Calls it via `InferenceClient.chat.completions.create`.
-     - Stores the response under the model name.
-  4. Builds a second prompt using the full PDF content (no Supermemory retrieval).
-  5. Queries each model again and stores responses under keys prefixed with `"Without Supermemory "`.
-- Returns JSON with:
-  - `success`: `true`
-  - `responses`: a dictionary of model name → response text.
-
-## Models
-
-The `Models` dict maps model names to a provider and an approximate parameter size, for example:
+The server runs at:
 
 ```
-Models = {
-    "meta-llama/Meta-Llama-3-70B-Instruct": ["novita", 70],
-    "meta-llama/Llama-3.1-8B-Instruct": ["novita", 8],
-    "openai/gpt-oss-20b": ["groq", 20],
-    "openai/gpt-oss-120b": ["groq", 120],
-    "deepseek-ai/DeepSeek-V3": ["novita", 671],
-    "meta-llama/Llama-3.2-1B-Instruct": ["novita", 1],
-    "meta-llama/Llama-4-Scout-17B-16E-Instruct": ["groq", 17],
-    "unsloth/Meta-Llama-3.1-8B-Instruct": ["featherless-ai", 8]
+http://localhost:5500
+```
+
+---
+
+## 🔌 API Endpoints
+
+### Home UI
+
+```
+GET /
+```
+
+Serves `index.html`
+
+---
+
+### Upload PDF
+
+```
+POST /upload
+```
+
+**Form Data**
+
+* `file`: PDF file
+
+```bash
+curl -X POST -F "file=@document.pdf" http://localhost:5500/upload
+```
+
+---
+
+### Query Document
+
+```
+POST /query
+```
+
+**Body**
+
+```
+What is the main contribution of the paper?
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "responses": {
+    "meta-llama/Meta-Llama-3-70B-Instruct": "...",
+    "Without Supermemory meta-llama/Meta-Llama-3-70B-Instruct": "..."
+  }
 }
+```
+
+---
+
+## 🤖 Models Used
+
+| Model                     | Provider       | Params |
+| ------------------------- | -------------- | ------ |
+| Meta-Llama-3-70B-Instruct | novita         | 70B    |
+| Llama-3.1-8B-Instruct     | novita         | 8B     |
+| GPT-OSS-20B               | groq           | 20B    |
+| GPT-OSS-120B              | groq           | 120B   |
+| DeepSeek-V3               | novita         | 671B   |
+| Llama-3.2-1B-Instruct     | novita         | 1B     |
+| Llama-4-Scout-17B-16E     | groq           | 17B    |
+| Unsloth Llama-3.1-8B      | featherless-ai | 8B     |
+
+---
+
+## 📁 Repository Structure
+
+```
+├── app.py
+├── index.html
+├── store/                      # Uploaded PDFs
+├── With_supermemory.jpeg       # QA with RAG
+├── without_Supermemory.jpeg    # QA without RAG
+├── supermemory_with_llm_inference.ipynb
+└── README.md
+```
+
+---
+
+## 📊 Observations
+
+* Retrieval via Supermemory significantly improves factual accuracy.
+* Direct prompting often suffers from hallucination or missed details.
+* Benefits are consistent across both small and large models.
+* Demonstrates training-free, modular RAG effectiveness.
+
+---
+
+## 🧩 Future Work
+
+* Chunk-level attribution in responses
+* Streaming responses
+* UI-based model selection
+* Evaluation metrics (F1 / EM)
+* Support for non-PDF documents
+
+---
+
+## 📄 License
+
+Add license information here.
+
+---
+
+## 👤 Author
+
+**Aman Yagami**
+GitHub: [https://github.com/amanyagami](https://github.com/amanyagami)
+
+```
 ```
